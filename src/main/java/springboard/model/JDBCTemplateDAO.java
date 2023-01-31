@@ -65,7 +65,8 @@ public class JDBCTemplateDAO {
 		}
 		//게시판 목록은 최근게시물이 위로 출력되야 하므로 내림차순 정렬
 		//한 상태로 가져와야한다.
-		sql += " ORDER BY idx DESC";
+		//sql += " ORDER BY idx DESC";
+		sql += " ORDER BY bgroup DESC, bstep ASC";
 		/*
 		 RowMapper가 select를 통해 얻어온 ResultSet을 갯수만큼
 		 반복하여 DTO에 저장한 후 List컬렉션에 추가하여 반환해준다.
@@ -91,12 +92,18 @@ public class JDBCTemplateDAO {
 					throws SQLException {
 				
 				//인파라미터가 있는 insert쿼리문 작성
-				String sql = "insert into springboard ( "
+				String sql = "INSERT INTO springboard ( "
 						+" idx, name, title, contents, hits "
 						+" ,bgroup, bstep, bindent, pass) "
-						+" values( "
+						+" VALUES( "
 						+" springboard_seq.nextval,?,?,?,0, "
 						+" springboard_seq.nextval,0,0,?)";
+				/*
+				답변형 게시판에서는 원본글인 경우 idx와 bgroup은 같은 값을 
+				입력받게된다. 이때 nextval을 한문장에서 두번 사용하게 되는데,
+				한문장에서 두번 문장이 나오더라도 항상 하나의 시퀀스만 반환하게 된다.
+				 */
+				
 				//익명클래스 내부에서 prepared객체를 생성한다.
 				PreparedStatement psmt = con.prepareStatement(sql);
 				//쿼리문에 인파라미터를 설정한다.
@@ -237,4 +244,78 @@ public class JDBCTemplateDAO {
 			}
 		});
 	}
+	//답변글 쓰기 처리
+	public void reply(final SpringBoardDTO dto) {
+		
+		//답변글 추가전에 bstep(그룹내의 정렬)을 일괄적으로 업데이트한다.
+		replyPrevUpdate(dto.getBgroup(), dto.getBstep());
+		
+		/*
+		 글쓰기의 경우 원본글이므로 idx와 bgroup은 같은 값을 입력한다.
+		 하지만 답변글은 원본글을 기반으로 작성되므로 idx는 새로운 시퀀스를
+		 사용하면 되고, bgroup은 원본글과 동일한 값을 입력해야한다.
+		 즉 bgroup컬럼을 통해 원본글과 답변글을 그룹화한다.
+		 */
+		String sql = "INSERT INTO springboard "
+				+" (idx, name, title, contents, pass, "
+				+" bgroup, bstep, bindent) "
+				+" VALUES "
+				+" (springboard_seq.nextval,?,?,?,?, "
+				+" ?,?,?)";
+		template.update(sql, new PreparedStatementSetter() {
+			@Override
+			public void setValues(PreparedStatement ps) throws SQLException {
+				ps.setString(1, dto.getName());
+				ps.setString(2, dto.getTitle());
+				ps.setString(3, dto.getContents());
+				ps.setString(4, dto.getPass());
+				//그룹번호는 원본글과 동일하게 입력하면 된다.
+				ps.setInt(5, dto.getBgroup());
+				/*
+				 답변글은 원본글 아래쪽에 노출되어야 하고, 또한 들여쓰기도 되어야한다.
+				 따라서 원본글에 +1 해준후 입력해야한다.
+				 */
+				ps.setInt(6, dto.getBstep()+1);
+				//인덴트는 들여쓰기의 깊이. 즉 depth 를 의미한다.
+				ps.setInt(7, dto.getBindent()+1);
+			}
+		});
+	}
+	/*
+	 답변글을 입력하기 전 현재 step보다 큰 게시물들을 step+1 처리해서 
+	 뒤로 일괄적으로 밀어주는 작업을 진행한다.
+	 원본글에 답변을 2번 이상 작성하는 경우 step에 입력되는 값이 
+	 동일해지는 현상을 방지하기 위한 목적으로 업데이트 하는것이다.
+	 */
+	public void replyPrevUpdate(int bGroup, int bStep) {
+		String sql = "update springboard set bstep=bstep+1 "
+				+" where bgroup=? and bstep>?";
+		template.update(sql, new Object[] {bGroup,bStep});
+	}
+	
+	public ArrayList<SpringBoardDTO> listPage(
+			Map<String, Object> map){
+
+		int start = Integer.parseInt(map.get("start").toString());
+		int end = Integer.parseInt(map.get("end").toString());
+		
+		String sql = ""
+				+"SELECT * FROM ("
+				+"    SELECT Tb.*, rownum rNum FROM ("
+				+"        SELECT * FROM springboard ";				
+			if(map.get("Word")!=null){
+				sql +=" WHERE "+map.get("Column")+" "
+					+ " LIKE '%"+map.get("Word")+"%' ";				
+			}			
+			sql += " ORDER BY bgroup DESC, bstep ASC"
+			+"    ) Tb"
+			+")"
+			+" WHERE rNum BETWEEN "+start+" and "+end;
+		
+		return (ArrayList<SpringBoardDTO>)
+			template.query(sql, 
+				new BeanPropertyRowMapper<SpringBoardDTO>(
+				SpringBoardDTO.class));
+		}
+
 }

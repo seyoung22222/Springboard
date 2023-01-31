@@ -6,6 +6,12 @@
 <head>
 <meta charset="UTF-8">
 <title>Insert title here</title>
+<style type="text/css">
+a{text-decoration: none; color:black}
+a:hover {
+	text-decoration: underline; color:blue;
+}
+</style>
 </head>
 <body>
 <div class="container">
@@ -75,6 +81,14 @@
 				</c:forEach>
 			</c:otherwise>
 		</c:choose>
+	</table>
+	<!-- 페이지 번호 -->
+	<table border="1" width="90%">
+		<tr>
+			<td align="center">
+				${pagingImg }
+			</td>
+		</tr>
 	</table>
 </div>
 
